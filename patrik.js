@@ -8,7 +8,6 @@ import {
     Group,
     Vector3,
     Mesh,
-    PCFSoftShadowMap,
     BoxGeometry,
     XRHandJoint,
     SphereBufferGeometry,
@@ -16,7 +15,6 @@ import {
     MeshPhongMaterial,
     SphereGeometry,
     Vector2,
-    Raycaster,
     Box3,
     HemisphereLight,
     BufferGeometry,
@@ -41,7 +39,7 @@ import URDFLoader from 'urdf-loader';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { TransformControls } from 'three/examples/jsm/controls/TransformControls.js';
 import { acceleratedRaycast, computeBoundsTree, disposeBoundsTree, MeshBVHVisualizer } from 'three-mesh-bvh';
-import Stats from 'three/examples/jsm/libs/stats.module.js';
+
 
 Mesh.prototype.raycast = acceleratedRaycast;
 BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
@@ -73,7 +71,7 @@ const linkX = 2.5;
 const linkY = 1.05;
 const linkZ = 1.5;
 
-let stats;
+
 let renderer, scene, camera;
 let controls, transformControls, targetObject;
 let directionalLight;
@@ -84,30 +82,57 @@ let ikNeedsUpdate = true;
 let R_followJoint, R_rukaLink;
 let L_followJoint, L_rukaLink, L;
 let head_followJoint, head_rukaLink;
-let righArmID;
+let firstLayerId, secondLayerId;
 let goal_ID = 1;
 let goalMesh = [];
 let followLink = [];
+let followLinkMap = new Map()
 let rArmPreset = [];
 let lArmPreset = [];
 let headPreset = [];
 
-let geometryCube, materialCube, affectorR, affectorL, box3R, box3L, link4R, link4L, geometryLink;
+let geometryCube, materialCube, affectorR, affectorL, link4R, link4L, geometryLink;
 
 let positionAffR = new Vector3;
 let positionAffL = new Vector3;
 let dirAffector = new Vector3;
 let dirAffL = new Vector3;
 
-let boundsViz, collHeadBig, collHeadSmall, collBodyBig, collBodySmall;
+let boundsViz, collHeadBig, collBodyBig;
+
+
+let sendBtn = document.createElement('BUTTON')
+sendBtn.textContent = 'отправить'
+document.body.appendChild(sendBtn)
+
+
+let modeBtn = document.createElement('BUTTON')
+modeBtn.textContent = 'режим'
+document.body.appendChild(modeBtn)
+
+
+let intersects
 
 
 
+let body = {
+    "l1": 2,
+    "l2": 33,
+    "l3": 0,
+    "l4": 10.5,
+    "l5": 0,
+    "neck": 0,
+    "head": 0,
+    "r1": 0,
+    "r2": 11.2,
+    "r3": 0,
+    "r4": 0,
+    "r5": 0,
+    "detach": true
+}
 
-stats = new Stats();
-document.body.appendChild(stats.dom);
 
-//outputContainer = document.getElementById('output');
+
 
 // init renderer
 renderer = new WebGLRenderer({ antialias: true });
@@ -159,35 +184,34 @@ scene.add(targetObject);
 transformControls.attach(targetObject);
 
 
-const requestUrl = 'http://localhost:8000/api/pose/'  //'https://jsonplaceholder.typicode.com/users'
+const requestUrlGet = 'http://localhost:8000/api/current_position/'  //'https://jsonplaceholder.typicode.com/users'
+const requestUrlPost = 'http://localhost:8000/api/run_servo/'
 // object
 
+let multiplyerGet = 0.004712389
+let multiplyerPost = 212.20
+let intervalSend = 20
 
 
 
-
-
-
-sendRequest('GET', requestUrl)
+sendRequest('GET', requestUrlGet)
     .then(
         data => {
-            rArmPreset[0] = data[0].r1
-            rArmPreset[1] = data[0].r2
-            rArmPreset[2] = data[0].r3
-            rArmPreset[3] = data[0].r4
-            rArmPreset[4] = data[0].r5
 
-            lArmPreset[0] = data[0].l1
-            lArmPreset[1] = data[0].l2
-            lArmPreset[2] = data[0].l3
-            lArmPreset[3] = data[0].l4
-            lArmPreset[4] = data[0].l5
+            rArmPreset[0] = data.positions.r1 * multiplyerGet
+            rArmPreset[1] = data.positions.r2 * multiplyerGet
+            rArmPreset[2] = data.positions.r3 * multiplyerGet
+            rArmPreset[3] = data.positions.r4 * multiplyerGet
+            rArmPreset[4] = data.positions.r5 * multiplyerGet
 
-            headPreset[0] = data[0].neck
-            headPreset[1] = data[0].head
+            lArmPreset[0] = data.positions.l1 * multiplyerGet
+            lArmPreset[1] = data.positions.l2 * multiplyerGet
+            lArmPreset[2] = data.positions.l3 * multiplyerGet
+            lArmPreset[3] = data.positions.l4 * multiplyerGet
+            lArmPreset[4] = data.positions.l5 * multiplyerGet
 
-
-
+            headPreset[0] = data.positions.neck * multiplyerGet
+            headPreset[1] = data.positions.head * multiplyerGet
 
             const loader = new URDFLoader();
             loader.parseCollision = true;
@@ -209,7 +233,7 @@ sendRequest('GET', requestUrl)
                         urdfRoot.setJointValue('neck_plast_link_joint', headPreset[0] / 4);
                         urdfRoot.setJointValue('head_steel_link_joint', headPreset[1] / 4);
 
-                        console.log(urdfRoot)
+
 
 
 
@@ -225,40 +249,44 @@ sendRequest('GET', requestUrl)
                         ikRoot.setDoF();
 
                         followLink[1] = new Link();
+                        followLinkMap.set(1, new Link())
                         R_followJoint = new Joint();
                         R_followJoint.setDoF(DOF.EX, DOF.EY, DOF.EZ);
                         R_followJoint.setPosition(0, 0, 3);
 
                         R_rukaLink = ikRoot.find(l => l.name === 'rightArm5_red_link');
                         R_rukaLink.addChild(R_followJoint);
-                        R_followJoint.addChild(followLink[1]);
+                        R_followJoint.addChild(followLinkMap.get(1));
 
-                        followLink[2] = new Link();
+                        // console.log(followLinkMap.get(1))
+                        //followLink[2] = new Link();
+                        followLinkMap.set(2, new Link())
                         L_followJoint = new Joint();
                         L_followJoint.setDoF(DOF.EX, DOF.EY, DOF.EZ);
                         L_followJoint.setPosition(0, 0, -3);
 
                         L_rukaLink = ikRoot.find(c => c.name === 'leftArm5_plast_link');
                         L_rukaLink.addChild(L_followJoint);
-                        L_followJoint.addChild(followLink[2]);
+                        L_followJoint.addChild(followLinkMap.get(2));
 
-                        followLink[3] = new Link();
+                        //followLink[3] = new Link();
+                        followLinkMap.set(3, new Link())
                         head_followJoint = new Joint();
                         head_followJoint.setDoF(DOF.EX, DOF.EY, DOF.EZ);
                         head_followJoint.setPosition(3, 5, 0);
 
                         head_rukaLink = ikRoot.find(c => c.name === 'head_steel_link');
                         head_rukaLink.addChild(head_followJoint);
-                        head_followJoint.addChild(followLink[3]);
+                        head_followJoint.addChild(followLinkMap.get(3));
 
                         goalMesh[1] = new Goal();
                         goalMesh[2] = new Goal();
                         goalMesh[3] = new Goal();
 
-                        followLink[2].getWorldPosition(goalMesh[2].position)
-                        followLink[3].getWorldPosition(goalMesh[3].position)
+                        // // followLinkMap.get(2).getWorldPosition(goalMesh[2].position)
+                        // // followLinkMap.get(3).getWorldPosition(goalMesh[3].position)
 
-                        goalMesh[1].makeClosure(followLink[1]);
+                        goalMesh[1].makeClosure(followLinkMap.get(1));
 
 
 
@@ -291,9 +319,6 @@ sendRequest('GET', requestUrl)
                                 //console.log(urdfRoot.colliders[key]);
                             }
 
-                            //followLink[2].getWorldPosition(goalMesh[2].position)
-                            // followLink[3].getWorldPosition(goalMesh[3].position)
-
                         }, 500);
 
                     }
@@ -307,6 +332,33 @@ sendRequest('GET', requestUrl)
 
 
 
+let counter = 0
+modeBtn.onclick = function () {
+    counter += 1
+    if (counter >= 2) {
+        counter = 0
+    }
+    console.log(counter)
+}
+
+setInterval(() => {
+    if (counter === 0) {
+        sendRequest('POST', requestUrlPost, body)
+            .then(data => console.log(data))
+            .catch(err => console.log(err))
+        //console.log(body)
+
+    }
+}, intervalSend);
+
+sendBtn.onclick = function () {
+    // console.log('kek')
+    sendRequest('POST', requestUrlPost, body)
+        .then(data => console.log(data))
+        .catch(err => console.log(err))
+
+}
+
 
 // --------------- make affectors ---------------------
 
@@ -315,7 +367,14 @@ geometryLink = new BoxGeometry(linkX, linkY, linkZ);
 materialCube = new MeshBasicMaterial({
     color: 0x049ef4,
     transparent: true,
-    opacity: 0.4
+    opacity: 0,
+    
+});
+const materialSphere = new MeshBasicMaterial({
+    color: 0x049ef4,
+    transparent: true,
+    opacity: 0.1,
+    side: 1
 });
 affectorR = new Mesh(geometryCube, materialCube);
 affectorR.matrixAutoUpdate = false;
@@ -330,7 +389,47 @@ scene.add(link4L);
 scene.add(affectorR);
 scene.add(affectorL);
 
+const sphereGeometry = new SphereGeometry(1000)
+const sphere = new Mesh(sphereGeometry, materialSphere)
+scene.add(sphere)
+console.log(materialCube)
+
 //transformControls.attach(affectorR)
+
+
+
+addEventListener("mousedown", function () {
+
+
+
+    if ((firstLayerId || secondLayerId) == 'rightArm5_plast') {
+
+
+        goal_ID = 1;
+        goalMesh[goal_ID].makeClosure(followLinkMap.get(goal_ID));
+
+        solver.updateStructure() //must to be, else dont work
+        setIKFromUrdf(ikRoot, urdfRoot);
+
+    } else if ((firstLayerId || secondLayerId) == 'head_coll_big') {
+
+        goal_ID = 3;
+        goalMesh[goal_ID].makeClosure(followLinkMap.get(goal_ID));
+
+        solver.updateStructure() //must to be, else dont work
+        setIKFromUrdf(ikRoot, urdfRoot);
+
+    } else if ((firstLayerId || secondLayerId) == 'leftArm5_plast') {
+        goal_ID = 2;
+        goalMesh[goal_ID].makeClosure(followLinkMap.get(goal_ID));
+
+        solver.updateStructure()//must to be, else dont work
+        setIKFromUrdf(ikRoot, urdfRoot);
+
+    }
+
+
+});
 
 
 //-----------------animate---------------------
@@ -338,45 +437,30 @@ function animate() {
 
 
     requestAnimationFrame(animate);
-    updateTarget();
 
-    for (let key in urdfRoot.joints) {
-        //	console.log(key);
-        console.log(key + ' ' + urdfRoot.joints[key].angle );
-    }
-    console.log('	')
+    // for (let key in urdfRoot.joints) {
+    // sendArr.shift()
+    //console.log(key);
+    //console.log(key + ' ' + urdfRoot.joints[key].angle);
+    // sendArr.push(urdfRoot.joints[key].angle)
+    // }
 
-    const intersects = transformControls.getRaycaster().intersectObject(urdfRoot, true)
-    if (intersects.length > 0) {
+    body.l1 = parseInt(urdfRoot.joints.leftArm1_plast_link_joint.angle * multiplyerPost)
+    body.l2 = parseInt(urdfRoot.joints.leftArm2_plast_link_joint.angle * multiplyerPost)
+    body.l3 = parseInt(urdfRoot.joints.leftArm3_plast_link_joint.angle * multiplyerPost)
+    body.l4 = parseInt(urdfRoot.joints.leftArm4_link_joint.angle * multiplyerPost)
+    body.l5 = parseInt(urdfRoot.joints.leftArm5_plast_link_joint.angle * multiplyerPost)
 
-        //console.log(intersects[0].object.parent.name);
+    body.neck = parseInt(urdfRoot.joints.leftArm1_plast_link_joint.angle * multiplyerPost)
+    body.head = parseInt(urdfRoot.joints.head_steel_link_joint.angle * multiplyerPost)
 
-        righArmID = intersects[0].object.parent.name;
-
-        addEventListener("mousedown", function () {
-
-            if (righArmID === 'rightArm5_plast') {
-
-                goal_ID = 1;
-                goalMesh[goal_ID].makeClosure(followLink[goal_ID]);
-
-            } else if (righArmID === 'head_coll_big') {
-
-                goal_ID = 3;
-                goalMesh[goal_ID].makeClosure(followLink[goal_ID]);
-                solver = new Solver([ikRoot, goalMesh[goal_ID]]);
-
-
-            } else if (righArmID === 'leftArm5_plast') {
-                goal_ID = 2;
-                goalMesh[goal_ID].makeClosure(followLink[goal_ID]);
-                solver = new Solver([ikRoot, goalMesh[goal_ID]]);
-            }
-        });
-    }
-
-
-
+    body.r1 = parseInt(urdfRoot.joints.leftArm1_link_joint.angle * multiplyerPost)
+    body.r2 = parseInt(urdfRoot.joints.rightArm2_link_joint.angle * multiplyerPost)
+    body.r3 = parseInt(urdfRoot.joints.rightArm3_link_joint.angle * multiplyerPost)
+    body.r4 = parseInt(urdfRoot.joints.rightArm4_link_joint.angle * multiplyerPost)
+    body.r5 = parseInt(urdfRoot.joints.rightArm5_plast_link_joint.angle * multiplyerPost)
+    //console.log(body)
+    //console.log(' ')
 
     if (goal_ID == 1) {
         // right Arm constrains
@@ -485,19 +569,27 @@ function animate() {
     if (hitheadR || hitBodyR || hitheadsmallRlink || hitBodySmallRlink || hitheadL || hitBodyL || hitheadsmallLlink || hitBodySmallLlink) {
 
     } else {
+
         solver.solve();
         // console.log('norm')
     }
 
-
-    //ikHelper.updateStructure();
-    //drawThroughIkHelper.updateStructure();
-    // setUrdfFromIK(urdfRoot, ikRoot);
     Object.assign(solver, solverOptions);
     setUrdfFromIK(urdfRoot, ikRoot);
-
+    updateTarget();
 
     renderer.render(scene, camera);
+
+    intersects = transformControls.getRaycaster().intersectObject(scene, true)
+    if (intersects.length > 0) {
+
+        firstLayerId = intersects[0].object.parent.name;
+        secondLayerId = intersects[1].object.parent.name;
+        // console.log(goal_ID, intersects[1].object.parent.name, intersects.length) //.parent.name
+        // console.log(goal_ID, intersects[0].object.parent.name, intersects.length) //.parent.name
+        // console.log(goal_ID, intersects[0])
+        // console.log(' '
+    }
 
 }
 
@@ -511,7 +603,7 @@ function updateTarget() {
 
     if (!transformControls.dragging) {
 
-        targetObject.matrix.set(...followLink[goal_ID].matrixWorld).transpose();
+        targetObject.matrix.set(...followLinkMap.get(goal_ID).matrixWorld).transpose();  //
         targetObject.matrix.decompose(
             targetObject.position,
             targetObject.quaternion,
@@ -524,7 +616,6 @@ function updateTarget() {
             targetObject.position.z,
         );
         //console.log('rem')
-
     }
     goalMesh[goal_ID].setPosition(
         targetObject.position.x,
