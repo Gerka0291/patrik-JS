@@ -100,15 +100,21 @@ let dirAffL = new Vector3;
 
 let boundsViz, collHeadBig, collBodyBig;
 
+let containerSendBtn = document.getElementById('sendBtn');
+let sendBtn = document.createElement('BUTTON');
+// sendBtn.id = 'sendId'
+sendBtn.textContent = 'отправить';
+containerSendBtn.appendChild(sendBtn);
+// document.body.appendChild(sendBtn)
 
-let sendBtn = document.createElement('BUTTON')
-sendBtn.textContent = 'отправить'
-document.body.appendChild(sendBtn)
+let mode1 = 'lol';
+let mode2 = 'kek';
 
-
-let modeBtn = document.createElement('BUTTON')
-modeBtn.textContent = 'режим'
-document.body.appendChild(modeBtn)
+let containerModeBtn = document.getElementById('modeBtn');
+let modeBtn = document.createElement('BUTTON');
+modeBtn.textContent = mode1;
+containerModeBtn.appendChild(modeBtn);
+// document.body.appendChild(modeBtn)
 
 
 let intersects
@@ -138,7 +144,9 @@ let body = {
 renderer = new WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(window.devicePixelRatio);
 renderer.setSize(window.innerWidth, window.innerHeight);
-document.body.appendChild(renderer.domElement);
+let mainContainer = document.getElementById('mainWindow');
+mainContainer.appendChild(renderer.domElement);
+// document.body.appendChild(renderer.domElement);
 camera = new PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 500);
 camera.position.set(40, 30, 0);
 scene = new Scene();
@@ -190,7 +198,7 @@ const requestUrlPost = 'http://localhost:8000/api/run_servo/'
 
 let multiplyerGet = 0.004712389
 let multiplyerPost = 212.20
-let intervalSend = 20
+let intervalSend = 100
 
 
 
@@ -213,6 +221,14 @@ sendRequest('GET', requestUrlGet)
             headPreset[0] = data.positions.neck * multiplyerGet
             headPreset[1] = data.positions.head * multiplyerGet
 
+
+            for (let key in data.positions) {
+
+                //console.log(key);
+                console.log(key + ' ' + data.positions[key]);
+
+            }
+
             const loader = new URDFLoader();
             loader.parseCollision = true;
 
@@ -224,25 +240,36 @@ sendRequest('GET', requestUrlGet)
 
                         ikRoot = urdfRobotToIKRoot(urdfRoot)
 
-                        urdfRoot.setJointValue('leftArm2_plast_link_joint', lArmPreset[0] / 4);
-                        urdfRoot.setJointValue('leftArm3_plast_link_joint', lArmPreset[0] / 4);
-                        urdfRoot.setJointValue('leftArm4_link_joint', lArmPreset[0] / 4);
-                        urdfRoot.setJointValue('rightArm2_link_joint', -rArmPreset[0] / 4);
-                        urdfRoot.setJointValue('rightArm3_link_joint', -rArmPreset[0] / 4);
-                        urdfRoot.setJointValue('rightArm4_link_joint', -rArmPreset[0] / 4);
-                        urdfRoot.setJointValue('neck_plast_link_joint', headPreset[0] / 4);
-                        urdfRoot.setJointValue('head_steel_link_joint', headPreset[1] / 4);
+                        urdfRoot.setJointValue('leftArm1_plast_link_joint', lArmPreset[0]);
+                        urdfRoot.setJointValue('leftArm2_plast_link_joint', lArmPreset[1]);
+                        urdfRoot.setJointValue('leftArm3_plast_link_joint', lArmPreset[2]);
+                        urdfRoot.setJointValue('leftArm4_link_joint', lArmPreset[3]);
+                        urdfRoot.setJointValue('leftArm5_plast_link_joint', lArmPreset[4]);
+
+                        urdfRoot.setJointValue('leftArm1_link_joint', rArmPreset[0]);
+                        urdfRoot.setJointValue('rightArm2_link_joint', rArmPreset[1]);
+                        urdfRoot.setJointValue('rightArm3_link_joint', rArmPreset[2]);
+                        urdfRoot.setJointValue('rightArm4_link_joint', lArmPreset[3]);
+                        urdfRoot.setJointValue('rightArm5_plast_link_joint', lArmPreset[4]);
+
+                        urdfRoot.setJointValue('neck_plast_link_joint', headPreset[0]);
+                        urdfRoot.setJointValue('head_steel_link_joint', headPreset[1]);
 
 
+                        // body.l1 = parseInt(urdfRoot.joints.leftArm1_plast_link_joint.angle * multiplyerPost)
+                        // body.l2 = parseInt(urdfRoot.joints.leftArm2_plast_link_joint.angle * multiplyerPost)
+                        // body.l3 = parseInt(urdfRoot.joints.leftArm3_plast_link_joint.angle * multiplyerPost)
+                        // body.l4 = parseInt(urdfRoot.joints.leftArm4_link_joint.angle * multiplyerPost)
+                        // body.l5 = parseInt(urdfRoot.joints.leftArm5_plast_link_joint.angle * multiplyerPost)
 
+                        // body.neck = parseInt(urdfRoot.joints.leftArm1_plast_link_joint.angle * multiplyerPost)
+                        // body.head = parseInt(urdfRoot.joints.head_steel_link_joint.angle * multiplyerPost)
 
-
-                        // urdfRoot.setJointValue('leftArm2_plast_link_joint', Math.PI / 8);
-                        // urdfRoot.setJointValue('leftArm3_plast_link_joint', Math.PI / 8);
-                        // urdfRoot.setJointValue('leftArm4_link_joint', Math.PI / 8);
-                        // urdfRoot.setJointValue('rightArm2_link_joint', -Math.PI / 8);
-                        // urdfRoot.setJointValue('rightArm3_link_joint', -Math.PI / 8);
-                        // urdfRoot.setJointValue('rightArm4_link_joint', -Math.PI / 8);
+                        // body.r1 = parseInt(urdfRoot.joints.leftArm1_link_joint.angle * multiplyerPost)
+                        // body.r2 = parseInt(urdfRoot.joints.rightArm2_link_joint.angle * multiplyerPost)
+                        // body.r3 = parseInt(urdfRoot.joints.rightArm3_link_joint.angle * multiplyerPost)
+                        // body.r4 = parseInt(urdfRoot.joints.rightArm4_link_joint.angle * multiplyerPost)
+                        // body.r5 = parseInt(urdfRoot.joints.rightArm5_plast_link_joint.angle * multiplyerPost)
                         setIKFromUrdf(ikRoot, urdfRoot);
 
                         // make base stationary
@@ -332,21 +359,25 @@ sendRequest('GET', requestUrlGet)
 
 
 
-let counter = 0
+let counter = 1
+let txtmesaage =''
 modeBtn.onclick = function () {
+    txtmesaage =mode1
     counter += 1
     if (counter >= 2) {
+        txtmesaage =mode2
         counter = 0
     }
+    modeBtn.textContent = txtmesaage;
     console.log(counter)
 }
 
 setInterval(() => {
     if (counter === 0) {
         sendRequest('POST', requestUrlPost, body)
-            .then(data => console.log(data))
-            .catch(err => console.log(err))
-        //console.log(body)
+        //  .then(data => console.log(data))
+        //  .catch(err => console.log(err))
+        // console.log(body)
 
     }
 }, intervalSend);
@@ -368,7 +399,7 @@ materialCube = new MeshBasicMaterial({
     color: 0x049ef4,
     transparent: true,
     opacity: 0,
-    
+
 });
 const materialSphere = new MeshBasicMaterial({
     color: 0x049ef4,
@@ -451,7 +482,7 @@ function animate() {
     body.l4 = parseInt(urdfRoot.joints.leftArm4_link_joint.angle * multiplyerPost)
     body.l5 = parseInt(urdfRoot.joints.leftArm5_plast_link_joint.angle * multiplyerPost)
 
-    body.neck = parseInt(urdfRoot.joints.leftArm1_plast_link_joint.angle * multiplyerPost)
+    body.neck = parseInt(urdfRoot.joints.neck_plast_link_joint.angle * multiplyerPost)
     body.head = parseInt(urdfRoot.joints.head_steel_link_joint.angle * multiplyerPost)
 
     body.r1 = parseInt(urdfRoot.joints.leftArm1_link_joint.angle * multiplyerPost)
