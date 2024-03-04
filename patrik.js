@@ -122,15 +122,15 @@ let intersects
 
 
 let body = {
-    "l1": 2,
-    "l2": 33,
+    "l1": 0,
+    "l2": 0,
     "l3": 0,
-    "l4": 10.5,
+    "l4": 0,
     "l5": 0,
     "neck": 0,
     "head": 0,
     "r1": 0,
-    "r2": 11.2,
+    "r2": 0,
     "r3": 0,
     "r4": 0,
     "r5": 0,
@@ -192,11 +192,14 @@ scene.add(targetObject);
 transformControls.attach(targetObject);
 
 
-const requestUrlGet = 'http://localhost:8000/api/current_position/'  //'https://jsonplaceholder.typicode.com/users'
+const requestUrlGet = 'http://localhost:8000/api/current_position/'  
 const requestUrlPost = 'http://localhost:8000/api/run_servo/'
-// object
 
+// object
 let multiplyerGet = 0.004712389
+// let multiplyerGet = 212.206
+// let offset = 2.356
+
 let multiplyerPost = 212.20
 let intervalSend = 100
 
@@ -205,8 +208,23 @@ let intervalSend = 100
 sendRequest('GET', requestUrlGet)
     .then(
         data => {
+ 
+            // rArmPreset[0] = data.positions.r1 / multiplyerGet - offset
+            // rArmPreset[1] = data.positions.r2 / multiplyerGet - offset
+            // rArmPreset[2] = data.positions.r3 / multiplyerGet - offset
+            // rArmPreset[3] = data.positions.r4 / multiplyerGet - offset
+            // rArmPreset[4] = data.positions.r5 / multiplyerGet - offset
 
-            rArmPreset[0] = data.positions.r1 * multiplyerGet
+            // lArmPreset[0] = data.positions.l1 / multiplyerGet - offset
+            // lArmPreset[1] = data.positions.l2 / multiplyerGet - offset
+            // lArmPreset[2] = data.positions.l3 / multiplyerGet - offset
+            // lArmPreset[3] = data.positions.l4 / multiplyerGet - offset
+            // lArmPreset[4] = data.positions.l5 / multiplyerGet - offset
+
+            // headPreset[0] = data.positions.neck / multiplyerGet - offset
+            // headPreset[1] = data.positions.head / multiplyerGet - offset
+
+            rArmPreset[0] = data.positions.r1*  multiplyerGet
             rArmPreset[1] = data.positions.r2 * multiplyerGet
             rArmPreset[2] = data.positions.r3 * multiplyerGet
             rArmPreset[3] = data.positions.r4 * multiplyerGet
@@ -341,12 +359,13 @@ sendRequest('GET', requestUrlGet)
                             for (let key in urdfRoot.colliders) {
                                 //	console.log(key);
                                 urdfRoot.colliders[key].children[0].material.color.setHex(0xb8ac23);
-                                urdfRoot.colliders[key].children[0].material.opacity = 0;
+                                urdfRoot.colliders[key].children[0].material.opacity = 0.3;
                                 urdfRoot.colliders[key].children[0].material.transparent = true;
                                 //console.log(urdfRoot.colliders[key]);
                             }
 
                         }, 500);
+                        
 
                     }
                 );
@@ -463,6 +482,9 @@ addEventListener("mousedown", function () {
 });
 
 
+
+
+
 //-----------------animate---------------------
 function animate() {
 
@@ -485,7 +507,7 @@ function animate() {
     body.neck = parseInt(urdfRoot.joints.neck_plast_link_joint.angle * multiplyerPost)
     body.head = parseInt(urdfRoot.joints.head_steel_link_joint.angle * multiplyerPost)
 
-    body.r1 = parseInt(urdfRoot.joints.leftArm1_link_joint.angle * multiplyerPost)
+    body.r1 = parseInt(urdfRoot.joints.rightArm1_link_joint.angle * multiplyerPost)
     body.r2 = parseInt(urdfRoot.joints.rightArm2_link_joint.angle * multiplyerPost)
     body.r3 = parseInt(urdfRoot.joints.rightArm3_link_joint.angle * multiplyerPost)
     body.r4 = parseInt(urdfRoot.joints.rightArm4_link_joint.angle * multiplyerPost)
