@@ -107,8 +107,8 @@ sendBtn.textContent = 'отправить';
 containerSendBtn.appendChild(sendBtn);
 // document.body.appendChild(sendBtn)
 
-let mode1 = 'lol';
-let mode2 = 'kek';
+let mode1 = 'авто';
+let mode2 = 'ручной';
 
 let containerModeBtn = document.getElementById('modeBtn');
 let modeBtn = document.createElement('BUTTON');
@@ -196,9 +196,10 @@ const requestUrlGet = 'http://localhost:8000/api/current_position/'
 const requestUrlPost = 'http://localhost:8000/api/run_servo/'
 
 // object
-let multiplyerGet = 0.004712389
-// let multiplyerGet = 212.206
-// let offset = 2.356
+// let multiplyerGet = 0.004712389
+let multiplyerGet = 212.206
+let offset = 2.356
+let offsetSend = 500
 
 let multiplyerPost = 212.20
 let intervalSend = 100
@@ -209,35 +210,35 @@ sendRequest('GET', requestUrlGet)
     .then(
         data => {
  
-            // rArmPreset[0] = data.positions.r1 / multiplyerGet - offset
-            // rArmPreset[1] = data.positions.r2 / multiplyerGet - offset
-            // rArmPreset[2] = data.positions.r3 / multiplyerGet - offset
-            // rArmPreset[3] = data.positions.r4 / multiplyerGet - offset
-            // rArmPreset[4] = data.positions.r5 / multiplyerGet - offset
+            rArmPreset[0] = data.positions.r1 / multiplyerGet - offset
+            rArmPreset[1] = data.positions.r2 / multiplyerGet - offset
+            rArmPreset[2] = data.positions.r3 / multiplyerGet - offset
+            rArmPreset[3] = data.positions.r4 / multiplyerGet - offset
+            rArmPreset[4] = data.positions.r5 / multiplyerGet - offset
 
-            // lArmPreset[0] = data.positions.l1 / multiplyerGet - offset
-            // lArmPreset[1] = data.positions.l2 / multiplyerGet - offset
-            // lArmPreset[2] = data.positions.l3 / multiplyerGet - offset
-            // lArmPreset[3] = data.positions.l4 / multiplyerGet - offset
-            // lArmPreset[4] = data.positions.l5 / multiplyerGet - offset
+            lArmPreset[0] = data.positions.l1 / multiplyerGet - offset
+            lArmPreset[1] = data.positions.l2 / multiplyerGet - offset
+            lArmPreset[2] = data.positions.l3 / multiplyerGet - offset
+            lArmPreset[3] = data.positions.l4 / multiplyerGet - offset
+            lArmPreset[4] = data.positions.l5 / multiplyerGet - offset
 
-            // headPreset[0] = data.positions.neck / multiplyerGet - offset
-            // headPreset[1] = data.positions.head / multiplyerGet - offset
+            headPreset[0] = data.positions.neck / multiplyerGet - offset
+            headPreset[1] = data.positions.head / multiplyerGet - offset
 
-            rArmPreset[0] = data.positions.r1*  multiplyerGet
-            rArmPreset[1] = data.positions.r2 * multiplyerGet
-            rArmPreset[2] = data.positions.r3 * multiplyerGet
-            rArmPreset[3] = data.positions.r4 * multiplyerGet
-            rArmPreset[4] = data.positions.r5 * multiplyerGet
+            // rArmPreset[0] = data.positions.r1*  multiplyerGet
+            // rArmPreset[1] = data.positions.r2 * multiplyerGet
+            // rArmPreset[2] = data.positions.r3 * multiplyerGet
+            // rArmPreset[3] = data.positions.r4 * multiplyerGet
+            // rArmPreset[4] = data.positions.r5 * multiplyerGet
 
-            lArmPreset[0] = data.positions.l1 * multiplyerGet
-            lArmPreset[1] = data.positions.l2 * multiplyerGet
-            lArmPreset[2] = data.positions.l3 * multiplyerGet
-            lArmPreset[3] = data.positions.l4 * multiplyerGet
-            lArmPreset[4] = data.positions.l5 * multiplyerGet
+            // lArmPreset[0] = data.positions.l1 * multiplyerGet
+            // lArmPreset[1] = data.positions.l2 * multiplyerGet
+            // lArmPreset[2] = data.positions.l3 * multiplyerGet
+            // lArmPreset[3] = data.positions.l4 * multiplyerGet
+            // lArmPreset[4] = data.positions.l5 * multiplyerGet
 
-            headPreset[0] = data.positions.neck * multiplyerGet
-            headPreset[1] = data.positions.head * multiplyerGet
+            // headPreset[0] = data.positions.neck * multiplyerGet
+            // headPreset[1] = data.positions.head * multiplyerGet
 
 
             for (let key in data.positions) {
@@ -406,6 +407,7 @@ sendBtn.onclick = function () {
     sendRequest('POST', requestUrlPost, body)
         .then(data => console.log(data))
         .catch(err => console.log(err))
+        console.log(body)
 
 }
 
@@ -498,22 +500,22 @@ function animate() {
     // sendArr.push(urdfRoot.joints[key].angle)
     // }
 
-    body.l1 = parseInt(urdfRoot.joints.leftArm1_plast_link_joint.angle * multiplyerPost)
-    body.l2 = parseInt(urdfRoot.joints.leftArm2_plast_link_joint.angle * multiplyerPost)
-    body.l3 = parseInt(urdfRoot.joints.leftArm3_plast_link_joint.angle * multiplyerPost)
-    body.l4 = parseInt(urdfRoot.joints.leftArm4_link_joint.angle * multiplyerPost)
-    body.l5 = parseInt(urdfRoot.joints.leftArm5_plast_link_joint.angle * multiplyerPost)
+    body.l1 = parseInt(urdfRoot.joints.leftArm1_plast_link_joint.angle * multiplyerPost + offsetSend)
+    body.l2 = parseInt(urdfRoot.joints.leftArm2_plast_link_joint.angle * multiplyerPost + offsetSend)
+    body.l3 = parseInt(urdfRoot.joints.leftArm3_plast_link_joint.angle * multiplyerPost + offsetSend)
+    body.l4 = parseInt(urdfRoot.joints.leftArm4_link_joint.angle * multiplyerPost + offsetSend)
+    body.l5 = parseInt(urdfRoot.joints.leftArm5_plast_link_joint.angle * multiplyerPost + offsetSend)
 
-    body.neck = parseInt(urdfRoot.joints.neck_plast_link_joint.angle * multiplyerPost)
-    body.head = parseInt(urdfRoot.joints.head_steel_link_joint.angle * multiplyerPost)
+    body.neck = parseInt(urdfRoot.joints.neck_plast_link_joint.angle * multiplyerPost + offsetSend)
+    body.head = parseInt(urdfRoot.joints.head_steel_link_joint.angle * multiplyerPost + offsetSend)
 
-    body.r1 = parseInt(urdfRoot.joints.rightArm1_link_joint.angle * multiplyerPost)
-    body.r2 = parseInt(urdfRoot.joints.rightArm2_link_joint.angle * multiplyerPost)
-    body.r3 = parseInt(urdfRoot.joints.rightArm3_link_joint.angle * multiplyerPost)
-    body.r4 = parseInt(urdfRoot.joints.rightArm4_link_joint.angle * multiplyerPost)
-    body.r5 = parseInt(urdfRoot.joints.rightArm5_plast_link_joint.angle * multiplyerPost)
-    //console.log(body)
-    //console.log(' ')
+    body.r1 = parseInt(urdfRoot.joints.rightArm1_link_joint.angle * multiplyerPost + offsetSend)
+    body.r2 = parseInt(urdfRoot.joints.rightArm2_link_joint.angle * multiplyerPost + offsetSend)
+    body.r3 = parseInt(urdfRoot.joints.rightArm3_link_joint.angle * multiplyerPost + offsetSend)
+    body.r4 = parseInt(urdfRoot.joints.rightArm4_link_joint.angle * multiplyerPost + offsetSend)
+    body.r5 = parseInt(urdfRoot.joints.rightArm5_plast_link_joint.angle * multiplyerPost + offsetSend)
+    // console.log(body)
+    // console.log(' ')
 
     if (goal_ID == 1) {
         // right Arm constrains
