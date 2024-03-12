@@ -195,8 +195,7 @@ transformControls.attach(targetObject);
 const requestUrlGet = 'http://localhost:8000/api/current_position/'  
 const requestUrlPost = 'http://localhost:8000/api/run_servo/'
 
-// object
-// let multiplyerGet = 0.004712389
+
 let multiplyerGet = 212.206
 let offset = 2.356
 let offsetSend = 500
@@ -225,20 +224,6 @@ sendRequest('GET', requestUrlGet)
             headPreset[0] = data.positions.neck / multiplyerGet - offset
             headPreset[1] = data.positions.head / multiplyerGet - offset
 
-            // rArmPreset[0] = data.positions.r1*  multiplyerGet
-            // rArmPreset[1] = data.positions.r2 * multiplyerGet
-            // rArmPreset[2] = data.positions.r3 * multiplyerGet
-            // rArmPreset[3] = data.positions.r4 * multiplyerGet
-            // rArmPreset[4] = data.positions.r5 * multiplyerGet
-
-            // lArmPreset[0] = data.positions.l1 * multiplyerGet
-            // lArmPreset[1] = data.positions.l2 * multiplyerGet
-            // lArmPreset[2] = data.positions.l3 * multiplyerGet
-            // lArmPreset[3] = data.positions.l4 * multiplyerGet
-            // lArmPreset[4] = data.positions.l5 * multiplyerGet
-
-            // headPreset[0] = data.positions.neck * multiplyerGet
-            // headPreset[1] = data.positions.head * multiplyerGet
 
 
             for (let key in data.positions) {
