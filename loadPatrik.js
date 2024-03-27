@@ -68,7 +68,7 @@ export function loadPatrik() {
                     rArmPreset[1] = data.positions.l4 / multiplyerGet - offset
                     rArmPreset[0] = data.positions.l5 / multiplyerGet - offset
 
-                    headPreset[1] = data.positions.neck / multiplyerGet - offset
+                    headPreset[1] = (data.positions.neck / multiplyerGet - offset) *-1
                     headPreset[0] = (data.positions.head / multiplyerGet - offset)
 
                     for (let key in data.positions) {
