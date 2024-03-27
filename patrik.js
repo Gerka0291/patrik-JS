@@ -1,68 +1,56 @@
 import {
-    WebGLRenderer,
-    PerspectiveCamera,
-    Color,
-    Scene,
-    DirectionalLight,
-    AmbientLight,
-    Group,
-    Vector3,
-    Mesh,
-    BoxGeometry,
-    XRHandJoint,
-    SphereBufferGeometry,
-    MeshBasicMaterial,
-    MeshPhongMaterial,
-    SphereGeometry,
-    Vector2,
-    Box3,
-    HemisphereLight,
-    BufferGeometry,
-    Matrix4,
-    Quaternion
+	WebGLRenderer,
+	PerspectiveCamera,
+	Color,
+	Scene,
+	sRGBEncoding,
+	Group,
+	Raycaster,
+	Vector2,
+	Vector4,
+	Mesh,
+	SphereGeometry,
+	MeshBasicMaterial,
+	PCFSoftShadowMap,
+	Box3,
+	Sphere,
+	Vector3,
+	HemisphereLight,
+	BufferGeometry,
+	BoxGeometry,
+	Matrix4,
+	Quaternion
+
 
 
 } from 'three';
-import {
-    Solver,
-    Link,
-    Joint,
-    IKRootsHelper,
-    setUrdfFromIK,
-    urdfRobotToIKRoot,
-    setIKFromUrdf,
-    Goal,
-    DOF
-} from 'closed-chain-ik';
-
-import URDFLoader from 'urdf-loader';
-import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { OrbitControls, } from 'three/examples/jsm/controls/OrbitControls.js';
 import { TransformControls } from 'three/examples/jsm/controls/TransformControls.js';
+import Stats from 'three/examples/jsm/libs/stats.module.js';
+import { mat4 } from 'gl-matrix';
+import {
+	Solver,
+	WorkerSolver,
+	Link,
+	Joint,
+	IKRootsHelper,
+	setUrdfFromIK,
+
+	urdfRobotToIKRoot,
+	setIKFromUrdf,
+	Goal,
+	DOF
+} from 'closed-chain-ik';
+import { loadPatrik } from './loadPatrik.js'
+
 import { acceleratedRaycast, computeBoundsTree, disposeBoundsTree, MeshBVHVisualizer } from 'three-mesh-bvh';
-
-
 Mesh.prototype.raycast = acceleratedRaycast;
 BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
 BufferGeometry.prototype.disposeBoundsTree = disposeBoundsTree;
+let collHeadBig, collBodyBig;
+// let results
 
-const solverOptions = {
-    maxIterations: 30,
-    divergeThreshold: 0.01,
-    stallThreshold: 0.00001,
-
-    translationErrorClamp: 0.01,
-    rotationErrorClamp: 0.01,
-
-    translationConvergeThreshold: 1e-5,
-    rotationConvergeThreshold: 1e-5,
-
-    // Factors to apply to the translation and rotation error in the error vector.
-    // Useful for weighting rotation higher than translation if they do not seem to
-    // be solved "evenly". Values are expected to be in the range [ 0, 1 ].
-    translationFactor: 1,
-    rotationFactor: 1
-};
-
+let geometryCube, materialCube, affectorR, affectorL, link4R, link4L, geometryLink;
 let boxX = 1.1;
 let boxY = 1;
 let boxZ = 1.7;
@@ -71,617 +59,741 @@ const linkX = 2.5;
 const linkY = 1.05;
 const linkZ = 1.5;
 
-
-let renderer, scene, camera;
-let controls, transformControls, targetObject;
-let directionalLight;
-
-let urdfRoot, ikRoot, ikHelper, drawThroughIkHelper, solver;
-let ikNeedsUpdate = true;
-
-let R_followJoint, R_rukaLink;
-let L_followJoint, L_rukaLink, L;
-let head_followJoint, head_rukaLink;
-let firstLayerId, secondLayerId;
-let goal_ID = 1;
-let goalMesh = [];
-let followLink = [];
-let followLinkMap = new Map()
-let rArmPreset = [];
-let lArmPreset = [];
-let headPreset = [];
-
-let geometryCube, materialCube, affectorR, affectorL, link4R, link4L, geometryLink;
-
 let positionAffR = new Vector3;
 let positionAffL = new Vector3;
 let dirAffector = new Vector3;
-let dirAffL = new Vector3;
-
-let boundsViz, collHeadBig, collBodyBig;
-
-let containerSendBtn = document.getElementById('sendBtn');
-let sendBtn = document.createElement('BUTTON');
-// sendBtn.id = 'sendId'
-sendBtn.textContent = 'отправить';
-containerSendBtn.appendChild(sendBtn);
-// document.body.appendChild(sendBtn)
-
-let mode1 = 'авто';
-let mode2 = 'ручной';
-
-let containerModeBtn = document.getElementById('modeBtn');
-let modeBtn = document.createElement('BUTTON');
-modeBtn.textContent = mode1;
-containerModeBtn.appendChild(modeBtn);
-// document.body.appendChild(modeBtn)
 
 
-let intersects
+const params = {
+	solve: true,
+	displayIk: false,
+	displayGoals: true,
+
+};
+
+let solverOptions = {
+	// useSVD: false,
+	maxIterations: 30,
+	divergeThreshold: 0.01,
+	stallThreshold: 0.00001,
+
+	translationErrorClamp: 0.01,
+	rotationErrorClamp: 0.01,
+
+	translationConvergeThreshold: 1e-5,
+	rotationConvergeThreshold: 1e-5,
+
+	translationFactor: 1,
+	rotationFactor: 1,
+
+	restPoseFactor: 0.025,
+};
 
 
+const goalToLinkMap = new Map();
+const linkToGoalMap = new Map();
+const goals = [];
+const goalIcons = [];
+let selectedGoalIndex = - 1;
 
-let body = {
-    "l1": 0,
-    "l2": 0,
-    "l3": 0,
-    "l4": 0,
-    "l5": 0,
-    "neck": 0,
-    "head": 0,
-    "r1": 0,
-    "r2": 0,
-    "r3": 0,
-    "r4": 0,
-    "r5": 0,
-    "detach": true
-}
+let stats;
+let outputContainer, renderer, scene, camera, mainContainer;
+let solver, ikHelper, drawThroughIkHelper, ikRoot, urdfRoot;
+let controls, transformControls, targetObject;
+let mouse = new Vector2();
+const box = new Box3();
+const sphere = new Sphere();
+const vector = new Vector3();
 
 
-
-
-// init renderer
-renderer = new WebGLRenderer({ antialias: true });
-renderer.setPixelRatio(window.devicePixelRatio);
-renderer.setSize(window.innerWidth, window.innerHeight);
-let mainContainer = document.getElementById('mainWindow');
-mainContainer.appendChild(renderer.domElement);
-// document.body.appendChild(renderer.domElement);
-camera = new PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 500);
-camera.position.set(40, 30, 0);
-scene = new Scene();
-scene.background = new Color('grey');
-//lights
-scene.add(new HemisphereLight(0xffffff, 'grey', 2));
-// controls
-controls = new OrbitControls(camera, renderer.domElement);
-controls.target.y = 15;
-controls.update();
-
-transformControls = new TransformControls(camera, renderer.domElement);
-transformControls.setSize(0.7);
-transformControls.setSpace('local');
-scene.add(transformControls);
-
-transformControls.addEventListener('mouseDown', () => {
-    controls.enabled = false;
-});
-
-transformControls.addEventListener('mouseUp', () => {
-    controls.enabled = true;
-    ikNeedsUpdate = true;
-    setIKFromUrdf(ikRoot, urdfRoot); // не дружит с transformControls
-    ikRoot.updateMatrixWorld(true);
-});
-window.addEventListener('resize', () => {
-    const w = window.innerWidth;
-    const h = window.innerHeight;
-    const aspect = w / h;
-    renderer.setSize(w, h);
-    camera.aspect = aspect;
-    camera.updateProjectionMatrix();
-});
-
-transformControls.addEventListener('objectChange', () => {
-    ikNeedsUpdate = true;
-});
-
-// patrik  target
-targetObject = new Group();
-scene.add(targetObject);
-transformControls.attach(targetObject);
-
-
-const requestUrlGet = 'http://localhost:8000/api/current_position/'  
-const requestUrlPost = 'http://localhost:8000/api/run_servo/'
-
-
+let rArmPreset = [];
+let lArmPreset = [];
+let headPreset = [];
 let multiplyerGet = 212.206
 let offset = 2.356
 let offsetSend = 500
 
+// const requestUrlPost = 'http://localhost:8000/api/run_servo/'
+const requestUrlPost = 'http://192.168.1.43:8003/api/run_servo/'
+
+
 let multiplyerPost = 212.20
-let intervalSend = 100
+let intervalSend = 700
+
+let bodySend = {
+	"l1": 0,
+	"l2": 0,
+	"l3": 0,
+	"l4": 0,
+	"l5": 0,
+	"neck": 0,
+	"head": 0,
+	"r1": 0,
+	"r2": 0,
+	"r3": 0,
+	"r4": 0,
+	"r5": 0,
+	"detach": true
+}
 
 
 
-sendRequest('GET', requestUrlGet)
-    .then(
-        data => {
- 
-            rArmPreset[0] = data.positions.r1 / multiplyerGet - offset
-            rArmPreset[1] = data.positions.r2 / multiplyerGet - offset
-            rArmPreset[2] = data.positions.r3 / multiplyerGet - offset
-            rArmPreset[3] = data.positions.r4 / multiplyerGet - offset
-            rArmPreset[4] = data.positions.r5 / multiplyerGet - offset
 
-            lArmPreset[0] = data.positions.l1 / multiplyerGet - offset
-            lArmPreset[1] = data.positions.l2 / multiplyerGet - offset
-            lArmPreset[2] = data.positions.l3 / multiplyerGet - offset
-            lArmPreset[3] = data.positions.l4 / multiplyerGet - offset
-            lArmPreset[4] = data.positions.l5 / multiplyerGet - offset
+// console.log('kek')
 
-            headPreset[0] = data.positions.neck / multiplyerGet - offset
-            headPreset[1] = data.positions.head / multiplyerGet - offset
+init();
+loadModel(loadPatrik());
 
 
-
-            for (let key in data.positions) {
-
-                //console.log(key);
-                console.log(key + ' ' + data.positions[key]);
-
-            }
-
-            const loader = new URDFLoader();
-            loader.parseCollision = true;
-
-            loader
-                .loadAsync('https://raw.githubusercontent.com/Gerka0291/urdf/main/bobotURDF/urdf/bobot.urdf')
-                .then(
-                    result => {
-                        urdfRoot = result;
-
-                        ikRoot = urdfRobotToIKRoot(urdfRoot)
-
-                        urdfRoot.setJointValue('leftArm1_plast_link_joint', lArmPreset[0]);
-                        urdfRoot.setJointValue('leftArm2_plast_link_joint', lArmPreset[1]);
-                        urdfRoot.setJointValue('leftArm3_plast_link_joint', lArmPreset[2]);
-                        urdfRoot.setJointValue('leftArm4_link_joint', lArmPreset[3]);
-                        urdfRoot.setJointValue('leftArm5_plast_link_joint', lArmPreset[4]);
-
-                        urdfRoot.setJointValue('leftArm1_link_joint', rArmPreset[0]);
-                        urdfRoot.setJointValue('rightArm2_link_joint', rArmPreset[1]);
-                        urdfRoot.setJointValue('rightArm3_link_joint', rArmPreset[2]);
-                        urdfRoot.setJointValue('rightArm4_link_joint', lArmPreset[3]);
-                        urdfRoot.setJointValue('rightArm5_plast_link_joint', lArmPreset[4]);
-
-                        urdfRoot.setJointValue('neck_plast_link_joint', headPreset[0]);
-                        urdfRoot.setJointValue('head_steel_link_joint', headPreset[1]);
-
-
-                        // body.l1 = parseInt(urdfRoot.joints.leftArm1_plast_link_joint.angle * multiplyerPost)
-                        // body.l2 = parseInt(urdfRoot.joints.leftArm2_plast_link_joint.angle * multiplyerPost)
-                        // body.l3 = parseInt(urdfRoot.joints.leftArm3_plast_link_joint.angle * multiplyerPost)
-                        // body.l4 = parseInt(urdfRoot.joints.leftArm4_link_joint.angle * multiplyerPost)
-                        // body.l5 = parseInt(urdfRoot.joints.leftArm5_plast_link_joint.angle * multiplyerPost)
-
-                        // body.neck = parseInt(urdfRoot.joints.leftArm1_plast_link_joint.angle * multiplyerPost)
-                        // body.head = parseInt(urdfRoot.joints.head_steel_link_joint.angle * multiplyerPost)
-
-                        // body.r1 = parseInt(urdfRoot.joints.leftArm1_link_joint.angle * multiplyerPost)
-                        // body.r2 = parseInt(urdfRoot.joints.rightArm2_link_joint.angle * multiplyerPost)
-                        // body.r3 = parseInt(urdfRoot.joints.rightArm3_link_joint.angle * multiplyerPost)
-                        // body.r4 = parseInt(urdfRoot.joints.rightArm4_link_joint.angle * multiplyerPost)
-                        // body.r5 = parseInt(urdfRoot.joints.rightArm5_plast_link_joint.angle * multiplyerPost)
-                        setIKFromUrdf(ikRoot, urdfRoot);
-
-                        // make base stationary
-                        ikRoot.setDoF();
-
-                        followLink[1] = new Link();
-                        followLinkMap.set(1, new Link())
-                        R_followJoint = new Joint();
-                        R_followJoint.setDoF(DOF.EX, DOF.EY, DOF.EZ);
-                        R_followJoint.setPosition(0, 0, 3);
-
-                        R_rukaLink = ikRoot.find(l => l.name === 'rightArm5_red_link');
-                        R_rukaLink.addChild(R_followJoint);
-                        R_followJoint.addChild(followLinkMap.get(1));
-
-                        // console.log(followLinkMap.get(1))
-                        //followLink[2] = new Link();
-                        followLinkMap.set(2, new Link())
-                        L_followJoint = new Joint();
-                        L_followJoint.setDoF(DOF.EX, DOF.EY, DOF.EZ);
-                        L_followJoint.setPosition(0, 0, -3);
-
-                        L_rukaLink = ikRoot.find(c => c.name === 'leftArm5_plast_link');
-                        L_rukaLink.addChild(L_followJoint);
-                        L_followJoint.addChild(followLinkMap.get(2));
-
-                        //followLink[3] = new Link();
-                        followLinkMap.set(3, new Link())
-                        head_followJoint = new Joint();
-                        head_followJoint.setDoF(DOF.EX, DOF.EY, DOF.EZ);
-                        head_followJoint.setPosition(3, 5, 0);
-
-                        head_rukaLink = ikRoot.find(c => c.name === 'head_steel_link');
-                        head_rukaLink.addChild(head_followJoint);
-                        head_followJoint.addChild(followLinkMap.get(3));
-
-                        goalMesh[1] = new Goal();
-                        goalMesh[2] = new Goal();
-                        goalMesh[3] = new Goal();
-
-                        // // followLinkMap.get(2).getWorldPosition(goalMesh[2].position)
-                        // // followLinkMap.get(3).getWorldPosition(goalMesh[3].position)
-
-                        goalMesh[1].makeClosure(followLinkMap.get(1));
-
-
-
-                        solver = new Solver([ikRoot, goalMesh[goal_ID]]);
-
-
-                        setIKFromUrdf(ikRoot, urdfRoot);
-                        scene.add(urdfRoot);
-
-
-
-                        setTimeout(() => {
-                            collHeadBig = urdfRoot.colliders.head_coll_big.children[0];
-                            collHeadBig.geometry.computeBoundsTree();
-
-
-                            collBodyBig = urdfRoot.colliders.body0_coll_big.children[0];
-                            collBodyBig.geometry.computeBoundsTree();
-
-
-
-                            boundsViz = new MeshBVHVisualizer(collHeadBig);
-                            boundsViz.depth = 100;
-
-                            for (let key in urdfRoot.colliders) {
-                                //	console.log(key);
-                                urdfRoot.colliders[key].children[0].material.color.setHex(0xb8ac23);
-                                urdfRoot.colliders[key].children[0].material.opacity = 0.3;
-                                urdfRoot.colliders[key].children[0].material.transparent = true;
-                                //console.log(urdfRoot.colliders[key]);
-                            }
-
-                        }, 500);
-                        
-
-                    }
-                );
-
-        })
-
-
-
-    .catch(err => console.log(err))
-
-
-
+// --------------- работа с отправкой ------------------//
+let mode1 = 'авто';
+let mode2 = 'ручной';
 let counter = 1
-let txtmesaage =''
+let txtmesaage = ''
+
+let containerSendBtn = document.getElementById('sendBtn');
+let sendBtn = document.createElement('BUTTON');
+sendBtn.textContent = 'отправить';
+containerSendBtn.appendChild(sendBtn);
+// console.log(scene)
+// raycast
+
+
+
+let containerModeBtn = document.getElementById('modeBtn');
+let modeBtn = document.createElement('BUTTON');
+modeBtn.textContent = mode2;
+containerModeBtn.appendChild(modeBtn);
+
 modeBtn.onclick = function () {
-    txtmesaage =mode1
-    counter += 1
-    if (counter >= 2) {
-        txtmesaage =mode2
-        counter = 0
-    }
-    modeBtn.textContent = txtmesaage;
-    console.log(counter)
+	txtmesaage = mode2
+	counter += 1
+	if (counter >= 2) {
+		txtmesaage = mode1
+		counter = 0
+	}
+	modeBtn.textContent = txtmesaage;
+	console.log(counter)
 }
 
 setInterval(() => {
-    if (counter === 0) {
-        sendRequest('POST', requestUrlPost, body)
-        //  .then(data => console.log(data))
-        //  .catch(err => console.log(err))
-        // console.log(body)
+	if (counter === 0) {
+		sendRequest('POST', requestUrlPost, bodySend)
+		//  .then(data => console.log(data))
+		//  .catch(err => console.log(err))
+		// console.log(bodySend)
 
-    }
+	}
 }, intervalSend);
 
 sendBtn.onclick = function () {
-    // console.log('kek')
-    sendRequest('POST', requestUrlPost, body)
-        .then(data => console.log(data))
-        .catch(err => console.log(err))
-        console.log(body)
+	// console.log('kek')
+	sendRequest('POST', requestUrlPost, bodySend)
+		.then(data => console.log(data))
+		.catch(err => console.log(err))
+	console.log(bodySend)
 
 }
 
 
-// --------------- make affectors ---------------------
+render();
 
-geometryCube = new BoxGeometry(boxX, boxY, boxZ);
-geometryLink = new BoxGeometry(linkX, linkY, linkZ);
-materialCube = new MeshBasicMaterial({
-    color: 0x049ef4,
-    transparent: true,
-    opacity: 0,
 
-});
-const materialSphere = new MeshBasicMaterial({
-    color: 0x049ef4,
-    transparent: true,
-    opacity: 0.1,
-    side: 1
-});
-affectorR = new Mesh(geometryCube, materialCube);
-affectorR.matrixAutoUpdate = false;
-affectorL = new Mesh(geometryCube, materialCube);
-affectorL.matrixAutoUpdate = false;
-link4R = new Mesh(geometryLink, materialCube);
-link4R.matrixAutoUpdate = false;
-link4L = new Mesh(geometryLink, materialCube);
-link4L.matrixAutoUpdate = false;
-scene.add(link4R);
-scene.add(link4L);
-scene.add(affectorR);
-scene.add(affectorL);
+function init() {
 
-const sphereGeometry = new SphereGeometry(1000)
-const sphere = new Mesh(sphereGeometry, materialSphere)
-scene.add(sphere)
-console.log(materialCube)
-
-//transformControls.attach(affectorR)
+	// stats = new Stats();
+	// document.getElementById('mainWindow').appendChild(stats.dom);
 
 
 
-addEventListener("mousedown", function () {
+	// init renderer
+	renderer = new WebGLRenderer({ antialias: true });
+	renderer.setPixelRatio(window.devicePixelRatio);
+	renderer.setSize(window.innerWidth, window.innerHeight);
+	mainContainer = document.getElementById('mainWindow');
+	mainContainer.appendChild(renderer.domElement);
+
+	camera = new PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 500);
+	camera.position.set(40, 30, 0);
+	// camera.rotation.set(1,1,1)
+	// camera.rotateY(180);
+	// camera.updateProjectionMatrix();
+	console.log(camera)
+
+
+	scene = new Scene();
+	scene.background = new Color('#bed0e8');
+
+	scene.add(new HemisphereLight(0xffffff, 'grey', 2));
+	controls = new OrbitControls(camera, renderer.domElement);
+	controls.target.y = 15;
+	controls.update();
 
 
 
-    if ((firstLayerId || secondLayerId) == 'rightArm5_plast') {
+	transformControls = new TransformControls(camera, renderer.domElement);
+	transformControls.setSpace('world'); // local
+	transformControls.setSize(0.7);
+	scene.add(transformControls);
+
+	transformControls.addEventListener('mouseDown', () => controls.enabled = false);
+	transformControls.addEventListener('mouseUp', () => controls.enabled = true);
+
+	targetObject = new Group();
+	targetObject.position.set(0, 1, 1);
+	scene.add(targetObject);
+	transformControls.attach(targetObject);
+
+	// --------------- создание кнопок---------------------//
 
 
-        goal_ID = 1;
-        goalMesh[goal_ID].makeClosure(followLinkMap.get(goal_ID));
+	window.addEventListener('resize', () => {
 
-        solver.updateStructure() //must to be, else dont work
-        setIKFromUrdf(ikRoot, urdfRoot);
+		const w = window.innerWidth;
+		const h = window.innerHeight;
+		const aspect = w / h;
+		renderer.setSize(w, h);
+		camera.aspect = aspect;
+		camera.updateProjectionMatrix();
 
-    } else if ((firstLayerId || secondLayerId) == 'head_coll_big') {
+		if (ikHelper) {
 
-        goal_ID = 3;
-        goalMesh[goal_ID].makeClosure(followLinkMap.get(goal_ID));
+			ikHelper.setResolution(window.innerWidth, window.innerHeight);
+			drawThroughIkHelper.setResolution(window.innerWidth, window.innerHeight);
 
-        solver.updateStructure() //must to be, else dont work
-        setIKFromUrdf(ikRoot, urdfRoot);
+		}
 
-    } else if ((firstLayerId || secondLayerId) == 'leftArm5_plast') {
-        goal_ID = 2;
-        goalMesh[goal_ID].makeClosure(followLinkMap.get(goal_ID));
+	});
 
-        solver.updateStructure()//must to be, else dont work
-        setIKFromUrdf(ikRoot, urdfRoot);
+	window.addEventListener('keydown', e => {
 
-    }
+		switch (e.key) {
 
+			case 'w':
+				transformControls.setMode('translate');
+				break;
+			case 'e':
+				transformControls.setMode('rotate');
+				break;
+			case 'q':
+				transformControls.setSpace(transformControls.space === 'local' ? 'world' : 'local');
+				break;
+			case 'f':
+				controls.target.set(0, 0, 0);
+				controls.update();
+				break;
 
-});
+		}
 
+	});
 
+	transformControls.addEventListener('mouseUp', () => {
 
+		if (selectedGoalIndex !== - 1) {
 
+			const goal = goals[selectedGoalIndex];
+			const ikLink = goalToLinkMap.get(goal);
+			if (ikLink) {
 
-//-----------------animate---------------------
-function animate() {
+				ikLink.updateMatrixWorld();
 
+				ikLink.attachChild(goal);
+				goal.setPosition(...goal.originalPosition);
+				goal.setQuaternion(...goal.originalQuaternion);
+				ikLink.detachChild(goal);
 
-    requestAnimationFrame(animate);
+				targetObject.position.set(...goal.position);
+				targetObject.quaternion.set(...goal.quaternion);
 
-    // for (let key in urdfRoot.joints) {
-    // sendArr.shift()
-    //console.log(key);
-    //console.log(key + ' ' + urdfRoot.joints[key].angle);
-    // sendArr.push(urdfRoot.joints[key].angle)
-    // }
+			}
 
-    body.l1 = parseInt(urdfRoot.joints.leftArm1_plast_link_joint.angle * multiplyerPost + offsetSend)
-    body.l2 = parseInt(urdfRoot.joints.leftArm2_plast_link_joint.angle * multiplyerPost + offsetSend)
-    body.l3 = parseInt(urdfRoot.joints.leftArm3_plast_link_joint.angle * multiplyerPost + offsetSend)
-    body.l4 = parseInt(urdfRoot.joints.leftArm4_link_joint.angle * multiplyerPost + offsetSend)
-    body.l5 = parseInt(urdfRoot.joints.leftArm5_plast_link_joint.angle * multiplyerPost + offsetSend)
+		}
 
-    body.neck = parseInt(urdfRoot.joints.neck_plast_link_joint.angle * multiplyerPost + offsetSend)
-    body.head = parseInt(urdfRoot.joints.head_steel_link_joint.angle * multiplyerPost + offsetSend)
+	});
 
-    body.r1 = parseInt(urdfRoot.joints.rightArm1_link_joint.angle * multiplyerPost + offsetSend)
-    body.r2 = parseInt(urdfRoot.joints.rightArm2_link_joint.angle * multiplyerPost + offsetSend)
-    body.r3 = parseInt(urdfRoot.joints.rightArm3_link_joint.angle * multiplyerPost + offsetSend)
-    body.r4 = parseInt(urdfRoot.joints.rightArm4_link_joint.angle * multiplyerPost + offsetSend)
-    body.r5 = parseInt(urdfRoot.joints.rightArm5_plast_link_joint.angle * multiplyerPost + offsetSend)
-    // console.log(body)
-    // console.log(' ')
+	renderer.domElement.addEventListener('pointerdown', e => {
 
-    if (goal_ID == 1) {
-        // right Arm constrains
-        urdfRoot.visual.rightArm5_plast.children[0].getWorldPosition(positionAffR);
-        targetObject.getWorldPosition(dirAffector);
-        affectorR.position.copy(positionAffR);
-        affectorR.translateZ(1.2);
-        affectorR.lookAt(dirAffector);
-        affectorR.updateMatrix();
+		mouse.x = e.clientX;
+		mouse.y = e.clientY;
 
-        let distLink4r = dirAffector.distanceTo(positionAffR)
+	});
 
-        link4R.position.copy(urdfRoot.visual.rightArm4.children[0].getWorldPosition(new Vector3))
-        link4R.quaternion.copy(urdfRoot.visual.rightArm4.children[0].getWorldQuaternion(new Quaternion))
-        link4R.translateZ(distLink4r / 3 - 1)
-        link4R.updateMatrix()
-        //console.log(distLink4);
+	renderer.domElement.addEventListener('pointerup', e => {
 
-        var transformMatrix = new Matrix4().copy(collHeadBig.matrixWorld).invert().multiply(affectorR.matrixWorld);
-        var transformMatrix1 = new Matrix4().copy(collBodyBig.matrixWorld).invert().multiply(affectorR.matrixWorld);
-        var transformMatrix2 = new Matrix4().copy(collHeadBig.matrixWorld).invert().multiply(link4R.matrixWorld);
-        var transformMatrix3 = new Matrix4().copy(collBodyBig.matrixWorld).invert().multiply(link4R.matrixWorld);
-        const multiplyerBoxR = 1.6;
-        const boxR = new Box3();
-        boxR.min.set(-boxX / multiplyerBoxR, -boxY / multiplyerBoxR, -boxZ / multiplyerBoxR);
-        boxR.max.set(boxX / multiplyerBoxR, boxY / multiplyerBoxR, boxZ / multiplyerBoxR);
+		if (Math.abs(e.clientX - mouse.x) > 3 || Math.abs(e.clientY - mouse.y) > 3) return;
 
-        const multLinkR = 2;
-        const linkBoxR = new Box3();
-        linkBoxR.min.set(-linkX / multLinkR, -linkY / multLinkR, -linkZ / multLinkR)
-        linkBoxR.max.set(linkX / multLinkR, linkY / multLinkR, linkZ / multLinkR)
+		if (!urdfRoot) return;
 
-        var hitheadR = collHeadBig.geometry.boundsTree.intersectsBox(boxR, transformMatrix)
-        var hitBodyR = collBodyBig.geometry.boundsTree.intersectsBox(boxR, transformMatrix1)
-        var hitheadsmallRlink = collHeadBig.geometry.boundsTree.intersectsBox(linkBoxR, transformMatrix2)
-        var hitBodySmallRlink = collBodyBig.geometry.boundsTree.intersectsBox(linkBoxR, transformMatrix3)
+		const { ikLink, result } = raycast(e);
+
+		// console.log( ikLink, result )
+
+		if (ikLink === null) {
+
+			selectedGoalIndex = - 1;
+
+		}
+		// console.log(e.button)
+		if (e.button === 0) {
 
 
+			if (!transformControls.dragging) {
 
-    } else if (goal_ID == 2) {
-        urdfRoot.visual.leftArm5_plast.children[0].getWorldPosition(positionAffL);
-        targetObject.getWorldPosition(dirAffector);
-        affectorL.position.copy(positionAffL);
-        affectorL.translateZ(1.2);
-        affectorL.lookAt(dirAffector);
-        affectorL.updateMatrix();
+				selectedGoalIndex = goalIcons.indexOf(result ? result.object.parent : null);
 
-        let distLink4l = dirAffector.distanceTo(positionAffL)
+				if (selectedGoalIndex !== - 1) {
 
-        link4L.position.copy(urdfRoot.visual.leftArm4.children[0].getWorldPosition(new Vector3))
-        link4L.quaternion.copy(urdfRoot.visual.leftArm4.children[0].getWorldQuaternion(new Quaternion))
-        link4L.translateZ(-distLink4l / 3 + 1)
-        link4L.updateMatrix()
-        //console.log(urdfRoot.visual);
+					const ikgoal = goals[selectedGoalIndex];
+					targetObject.position.set(...ikgoal.position);
+					targetObject.quaternion.set(...ikgoal.quaternion);
 
-        var transformMatrix5 = new Matrix4().copy(collHeadBig.matrixWorld).invert().multiply(affectorL.matrixWorld);
-        var transformMatrix6 = new Matrix4().copy(collBodyBig.matrixWorld).invert().multiply(affectorL.matrixWorld);
-        var transformMatrix7 = new Matrix4().copy(collHeadBig.matrixWorld).invert().multiply(link4L.matrixWorld);
-        var transformMatrix8 = new Matrix4().copy(collBodyBig.matrixWorld).invert().multiply(link4L.matrixWorld);
-        const multiplyerBoxR = 1.6;
-        const boxL = new Box3();
-        boxL.min.set(-boxX / multiplyerBoxR, -boxY / multiplyerBoxR, -boxZ / multiplyerBoxR);
-        boxL.max.set(boxX / multiplyerBoxR, boxY / multiplyerBoxR, boxZ / multiplyerBoxR);
+				} else if (ikLink && linkToGoalMap.has(ikLink)) {
 
-        const multLinkR = 2;
-        const linkBoxL = new Box3();
-        linkBoxL.min.set(-linkX / multLinkR, -linkY / multLinkR, -linkZ / multLinkR)
-        linkBoxL.max.set(linkX / multLinkR, linkY / multLinkR, linkZ / multLinkR)
+					const goal = linkToGoalMap.get(ikLink);
+					selectedGoalIndex = goals.indexOf(goal);
+					targetObject.position.set(...goal.position);
+					targetObject.quaternion.set(...goal.quaternion);
 
-        var hitheadL = collHeadBig.geometry.boundsTree.intersectsBox(boxL, transformMatrix5)
-        var hitBodyL = collBodyBig.geometry.boundsTree.intersectsBox(boxL, transformMatrix6)
-        var hitheadsmallLlink = collHeadBig.geometry.boundsTree.intersectsBox(linkBoxL, transformMatrix7)
-        var hitBodySmallLlink = collBodyBig.geometry.boundsTree.intersectsBox(linkBoxL, transformMatrix8)
+				}
 
+			}
 
-    } else if (goal_ID == 3) {
-        const multLinkR = 2;
-        const multiplyerBoxR = 1.6;
+		}
 
-        var transformMatrix = new Matrix4().copy(collHeadBig.matrixWorld).invert().multiply(affectorR.matrixWorld);
-        var transformMatrix2 = new Matrix4().copy(collHeadBig.matrixWorld).invert().multiply(link4R.matrixWorld);
-        var transformMatrix5 = new Matrix4().copy(collHeadBig.matrixWorld).invert().multiply(affectorL.matrixWorld);
-        var transformMatrix7 = new Matrix4().copy(collHeadBig.matrixWorld).invert().multiply(link4L.matrixWorld);
+	});
 
-        const boxL = new Box3();
-        boxL.min.set(-boxX / multiplyerBoxR, -boxY / multiplyerBoxR, -boxZ / multiplyerBoxR);
-        boxL.max.set(boxX / multiplyerBoxR, boxY / multiplyerBoxR, boxZ / multiplyerBoxR);
-        const linkBoxL = new Box3();
-        linkBoxL.min.set(-linkX / multLinkR, -linkY / multLinkR, -linkZ / multLinkR)
-        linkBoxL.max.set(linkX / multLinkR, linkY / multLinkR, linkZ / multLinkR)
-        const boxR = new Box3();
-        boxR.min.set(-boxX / multiplyerBoxR, -boxY / multiplyerBoxR, -boxZ / multiplyerBoxR);
-        boxR.max.set(boxX / multiplyerBoxR, boxY / multiplyerBoxR, boxZ / multiplyerBoxR);
-        const linkBoxR = new Box3();
-        linkBoxR.min.set(-linkX / multLinkR, -linkY / multLinkR, -linkZ / multLinkR)
-        linkBoxR.max.set(linkX / multLinkR, linkY / multLinkR, linkZ / multLinkR)
+	window.addEventListener('keydown', e => {
 
-        var hitheadR = collHeadBig.geometry.boundsTree.intersectsBox(boxR, transformMatrix)
-        var hitheadsmallRlink = collHeadBig.geometry.boundsTree.intersectsBox(linkBoxR, transformMatrix2)
-        var hitheadL = collHeadBig.geometry.boundsTree.intersectsBox(boxL, transformMatrix5)
-        var hitheadsmallLlink = collHeadBig.geometry.boundsTree.intersectsBox(linkBoxL, transformMatrix7)
+		if (selectedGoalIndex !== - 1 && (e.code === 'Delete' || e.code === 'Backspace')) {
+
+			deleteGoal(goals[selectedGoalIndex]);
+			selectedGoalIndex = - 1;
+
+		}
+
+	});
 
 
-    }
 
-    if (hitheadR || hitBodyR || hitheadsmallRlink || hitBodySmallRlink || hitheadL || hitBodyL || hitheadsmallLlink || hitBodySmallLlink) {
 
-    } else {
 
-        solver.solve();
-        // console.log('norm')
-    }
+	function deleteGoal(goal) {
 
-    Object.assign(solver, solverOptions);
-    setUrdfFromIK(urdfRoot, ikRoot);
-    updateTarget();
+		const index = goals.indexOf(goal);
+		const goalToRemove = goals[index];
+		goalToRemove.traverse(c => {
 
-    renderer.render(scene, camera);
+			if (c.isClosure) {
 
-    intersects = transformControls.getRaycaster().intersectObject(scene, true)
-    if (intersects.length > 0) {
+				c.removeChild(c.child);
 
-        firstLayerId = intersects[0].object.parent.name;
-        secondLayerId = intersects[1].object.parent.name;
-        // console.log(goal_ID, intersects[1].object.parent.name, intersects.length) //.parent.name
-        // console.log(goal_ID, intersects[0].object.parent.name, intersects.length) //.parent.name
-        // console.log(goal_ID, intersects[0])
-        // console.log(' '
-    }
+			}
+
+		});
+
+		goals.splice(index, 1);
+
+		const link = goalToLinkMap.get(goalToRemove);
+		goalToLinkMap.delete(goalToRemove);
+		linkToGoalMap.delete(link);
+
+		solver.updateStructure();
+		ikHelper.updateStructure();
+		drawThroughIkHelper.updateStructure();
+
+	}
+
+
+
+
+	// --------------- make affectors ---------------------
+
+	geometryCube = new BoxGeometry(boxX, boxY, boxZ);
+	geometryLink = new BoxGeometry(linkX, linkY, linkZ);
+	materialCube = new MeshBasicMaterial({
+		color: 0x049ef4,
+		transparent: true,
+		opacity: 0.0,
+
+	});
+	const materialSphere = new MeshBasicMaterial({
+		color: 0x049ef4,
+		transparent: true,
+		opacity: 0.3,
+		// side: 1
+	});
+	affectorR = new Mesh(geometryCube, materialCube);
+	affectorR.matrixAutoUpdate = false;
+	affectorL = new Mesh(geometryCube, materialCube);
+	affectorL.matrixAutoUpdate = false;
+	link4R = new Mesh(geometryLink, materialCube);
+	link4R.matrixAutoUpdate = false;
+	link4L = new Mesh(geometryLink, materialCube);
+	link4L.matrixAutoUpdate = false;
+	scene.add(link4R);
+	scene.add(link4L);
+	scene.add(affectorR);
+	scene.add(affectorL);
+
+	const sphereGeometry = new SphereGeometry(1000)
+	const sphere = new Mesh(sphereGeometry, materialSphere)
+	scene.add(sphere)
+}
+
+function raycast(e) {
+
+	let results;
+	let intersectGoals = [...goalIcons];
+	intersectGoals.length = goals.length;
+	results = transformControls.getRaycaster().intersectObjects(intersectGoals, true)
+
+	if (results.length !== 0) {
+		return { ikLink: null, result: results[0] };
+	}
+
+	if (results.length === 0) {
+		return { ikLink: null, result: null };
+	}
+
+	const result = results[0];
+
+	let nearestLink = null;
+	let ikLink = null;
+	result.object.traverseAncestors(p => {
+
+		if (nearestLink === null && p.isURDFLink) {
+			nearestLink = p;
+			ikRoot.traverse(c => {
+				if (c.name === nearestLink.name) {
+					ikLink = c;
+				}
+			});
+		}
+	});
+	return { ikLink, result };
+}
+
+function render() {
+
+	requestAnimationFrame(render);
+
+	bodySend.r5 = scale(parseInt(urdfRoot.joints.leftArm1_plast_joint.angle * multiplyerPost + offsetSend), 0, 1000, 1000, 0)
+	bodySend.r4 = parseInt(urdfRoot.joints.leftArm2_plast_link_joint.angle * multiplyerPost + offsetSend)
+	bodySend.r3 = parseInt(urdfRoot.joints.leftArm3_plast_link_joint.angle * multiplyerPost + offsetSend)
+	bodySend.r2 = parseInt(urdfRoot.joints.leftArm4_Joint.angle * multiplyerPost + offsetSend)
+	bodySend.r1 = scale(parseInt(urdfRoot.joints.leftArm5_plast_link_joint.angle * multiplyerPost + offsetSend), 0, 1000, 1000, 0)
+
+	bodySend.head = parseInt(urdfRoot.joints.neck_plast_link_joint.angle * multiplyerPost + offsetSend)
+	bodySend.neck = scale(parseInt(urdfRoot.joints.head_steel_Joint.angle * multiplyerPost + offsetSend), 0, 1000, 1000, 0)
+
+	bodySend.l5 = parseInt(urdfRoot.joints.rightArm1_link_joint.angle * multiplyerPost + offsetSend)
+	bodySend.l4 = parseInt(urdfRoot.joints.rightArm2_link_joint.angle * multiplyerPost + offsetSend)
+	bodySend.l3 = parseInt(urdfRoot.joints.rightArm3_link_joint.angle * multiplyerPost + offsetSend)
+	bodySend.l2 = parseInt(urdfRoot.joints.rightArm4_link_joint.angle * multiplyerPost + offsetSend)
+	bodySend.l1 = parseInt(urdfRoot.joints.rightArm5_plast_link_joint.angle * multiplyerPost + offsetSend)
+	// console.log(bodySend)
+
+	collHeadBig = urdfRoot.colliders.head_coll_big.children[0];
+	collHeadBig.geometry.computeBoundsTree();
+	collBodyBig = urdfRoot.colliders.body0_coll_big.children[0];
+	collBodyBig.geometry.computeBoundsTree();
+
+	// console.log(collHeadBig)
+
+
+	// console.log(selectedGoalIndex)
+	const allGoals = goals;
+	const selectedGoal = allGoals[selectedGoalIndex];
+	if (ikRoot) {
+
+
+
+		if (selectedGoal) {
+
+			selectedGoal.setPosition(targetObject.position.x, targetObject.position.y, targetObject.position.z);
+			selectedGoal.setQuaternion(targetObject.quaternion.x, targetObject.quaternion.y, targetObject.quaternion.z, targetObject.quaternion.w);
+
+		}
+
+
+		if (selectedGoalIndex == 2) {    //(goal_ID == 1) 
+			// right Arm constrains
+			urdfRoot.visual.rightArm5_plast.children[0].getWorldPosition(positionAffR);
+			targetObject.getWorldPosition(dirAffector);
+			affectorR.position.copy(positionAffR);
+			affectorR.translateZ(1.2);
+			affectorR.lookAt(dirAffector);
+			affectorR.updateMatrix();
+
+			let distLink4r = dirAffector.distanceTo(positionAffR)
+
+			link4R.position.copy(urdfRoot.visual.rightArm4.children[0].getWorldPosition(new Vector3))
+			link4R.quaternion.copy(urdfRoot.visual.rightArm4.children[0].getWorldQuaternion(new Quaternion))
+			link4R.translateZ(distLink4r / 3 - 1)
+			link4R.updateMatrix()
+			//console.log(distLink4);
+
+			var transformMatrix = new Matrix4().copy(collHeadBig.matrixWorld).invert().multiply(affectorR.matrixWorld);
+			var transformMatrix1 = new Matrix4().copy(collBodyBig.matrixWorld).invert().multiply(affectorR.matrixWorld);
+			var transformMatrix2 = new Matrix4().copy(collHeadBig.matrixWorld).invert().multiply(link4R.matrixWorld);
+			var transformMatrix3 = new Matrix4().copy(collBodyBig.matrixWorld).invert().multiply(link4R.matrixWorld);
+			const multiplyerBoxR = 1.6;
+			const boxR = new Box3();
+			boxR.min.set(-boxX / multiplyerBoxR, -boxY / multiplyerBoxR, -boxZ / multiplyerBoxR);
+			boxR.max.set(boxX / multiplyerBoxR, boxY / multiplyerBoxR, boxZ / multiplyerBoxR);
+
+			const multLinkR = 2;
+			const linkBoxR = new Box3();
+			linkBoxR.min.set(-linkX / multLinkR, -linkY / multLinkR, -linkZ / multLinkR)
+			linkBoxR.max.set(linkX / multLinkR, linkY / multLinkR, linkZ / multLinkR)
+
+			var hitheadR = collHeadBig.geometry.boundsTree.intersectsBox(boxR, transformMatrix)
+			var hitBodyR = collBodyBig.geometry.boundsTree.intersectsBox(boxR, transformMatrix1)
+			var hitheadsmallRlink = collHeadBig.geometry.boundsTree.intersectsBox(linkBoxR, transformMatrix2)
+			var hitBodySmallRlink = collBodyBig.geometry.boundsTree.intersectsBox(linkBoxR, transformMatrix3)
+
+
+
+		} else if (selectedGoalIndex == 1) {
+			//lArm constrains (goal_ID == 2)
+			urdfRoot.visual.leftArm5_plast.children[0].getWorldPosition(positionAffL);
+			targetObject.getWorldPosition(dirAffector);
+			affectorL.position.copy(positionAffL);
+			affectorL.translateZ(1.2);
+			affectorL.lookAt(dirAffector);
+			affectorL.updateMatrix();
+
+			let distLink4l = dirAffector.distanceTo(positionAffL)
+
+			link4L.position.copy(urdfRoot.visual.leftArm4.children[0].getWorldPosition(new Vector3))
+			link4L.quaternion.copy(urdfRoot.visual.leftArm4.children[0].getWorldQuaternion(new Quaternion))
+			link4L.translateZ(-distLink4l / 3 + 1)
+			link4L.updateMatrix()
+			//console.log(urdfRoot.visual);
+
+			var transformMatrix5 = new Matrix4().copy(collHeadBig.matrixWorld).invert().multiply(affectorL.matrixWorld);
+			var transformMatrix6 = new Matrix4().copy(collBodyBig.matrixWorld).invert().multiply(affectorL.matrixWorld);
+			var transformMatrix7 = new Matrix4().copy(collHeadBig.matrixWorld).invert().multiply(link4L.matrixWorld);
+			var transformMatrix8 = new Matrix4().copy(collBodyBig.matrixWorld).invert().multiply(link4L.matrixWorld);
+			const multiplyerBoxR = 1.6;
+			const boxL = new Box3();
+			boxL.min.set(-boxX / multiplyerBoxR, -boxY / multiplyerBoxR, -boxZ / multiplyerBoxR);
+			boxL.max.set(boxX / multiplyerBoxR, boxY / multiplyerBoxR, boxZ / multiplyerBoxR);
+
+			const multLinkR = 2;
+			const linkBoxL = new Box3();
+			linkBoxL.min.set(-linkX / multLinkR, -linkY / multLinkR, -linkZ / multLinkR)
+			linkBoxL.max.set(linkX / multLinkR, linkY / multLinkR, linkZ / multLinkR)
+
+			var hitheadL = collHeadBig.geometry.boundsTree.intersectsBox(boxL, transformMatrix5)
+			var hitBodyL = collBodyBig.geometry.boundsTree.intersectsBox(boxL, transformMatrix6)
+			var hitheadsmallLlink = collHeadBig.geometry.boundsTree.intersectsBox(linkBoxL, transformMatrix7)
+			var hitBodySmallLlink = collBodyBig.geometry.boundsTree.intersectsBox(linkBoxL, transformMatrix8)
+
+
+		} else if (selectedGoalIndex == 0) {
+			// head constrains(goal_ID == 3)
+			const multLinkR = 2;
+			const multiplyerBoxR = 1.6;
+
+			var transformMatrix = new Matrix4().copy(collHeadBig.matrixWorld).invert().multiply(affectorR.matrixWorld);
+			var transformMatrix2 = new Matrix4().copy(collHeadBig.matrixWorld).invert().multiply(link4R.matrixWorld);
+			var transformMatrix5 = new Matrix4().copy(collHeadBig.matrixWorld).invert().multiply(affectorL.matrixWorld);
+			var transformMatrix7 = new Matrix4().copy(collHeadBig.matrixWorld).invert().multiply(link4L.matrixWorld);
+
+			const boxL = new Box3();
+			boxL.min.set(-boxX / multiplyerBoxR, -boxY / multiplyerBoxR, -boxZ / multiplyerBoxR);
+			boxL.max.set(boxX / multiplyerBoxR, boxY / multiplyerBoxR, boxZ / multiplyerBoxR);
+			const linkBoxL = new Box3();
+			linkBoxL.min.set(-linkX / multLinkR, -linkY / multLinkR, -linkZ / multLinkR)
+			linkBoxL.max.set(linkX / multLinkR, linkY / multLinkR, linkZ / multLinkR)
+			const boxR = new Box3();
+			boxR.min.set(-boxX / multiplyerBoxR, -boxY / multiplyerBoxR, -boxZ / multiplyerBoxR);
+			boxR.max.set(boxX / multiplyerBoxR, boxY / multiplyerBoxR, boxZ / multiplyerBoxR);
+			const linkBoxR = new Box3();
+			linkBoxR.min.set(-linkX / multLinkR, -linkY / multLinkR, -linkZ / multLinkR)
+			linkBoxR.max.set(linkX / multLinkR, linkY / multLinkR, linkZ / multLinkR)
+
+			var hitheadR = collHeadBig.geometry.boundsTree.intersectsBox(boxR, transformMatrix)
+			var hitheadsmallRlink = collHeadBig.geometry.boundsTree.intersectsBox(linkBoxR, transformMatrix2)
+			var hitheadL = collHeadBig.geometry.boundsTree.intersectsBox(boxL, transformMatrix5)
+			var hitheadsmallLlink = collHeadBig.geometry.boundsTree.intersectsBox(linkBoxL, transformMatrix7)
+
+
+		}
+
+		if (hitheadR || hitBodyR || hitheadsmallRlink || hitBodySmallRlink || hitheadL || hitBodyL || hitheadsmallLlink || hitBodySmallLlink) {
+
+			console.log('NEnorm')
+		}
+		else {
+
+			solver.solve();
+			// console.log('norm')
+			const startTime = window.performance.now();
+			let statuses;
+
+			Object.assign(solver, solverOptions);
+			statuses = solver.solve();
+
+			setUrdfFromIK(urdfRoot, ikRoot);
+		}
+
+	}
+
+	while (goalIcons.length < allGoals.length) {
+
+		const color = new Color(0xffca28).convertSRGBToLinear();
+		const group = new Group();
+		const mesh = new Mesh(
+			new SphereGeometry(0.05, 30, 30),
+			new MeshBasicMaterial({ color }),
+		);
+		const mesh2 = new Mesh(
+			new SphereGeometry(0.05, 30, 30),
+			new MeshBasicMaterial({
+				color,
+				opacity: 0.4,
+				transparent: true,
+				depthWrite: false,
+				depthTest: false,
+			}),
+		);
+		// consistent size in screen space.
+
+		const ogUpdateMatrix = mesh.updateMatrix;
+		function updateMatrix(...args) {
+			this.scale.setScalar(this.position.distanceTo(camera.position) * 0.15);
+			ogUpdateMatrix.call(this, ...args);
+		}
+		mesh.updateMatrix = updateMatrix;
+		mesh2.updateMatrix = updateMatrix;
+		group.add(mesh, mesh2);
+		scene.add(group);
+		goalIcons.push(group);
+
+	}
+
+	goalIcons.forEach(g => g.visible = false);
+	allGoals.forEach((g, i) => {
+
+		goalIcons[i].position.set(...g.position);
+		goalIcons[i].quaternion.set(...g.quaternion);
+		goalIcons[i].visible = params.displayGoals;
+
+	});
+
+	// transformControls.enabled = selectedGoalIndex !== - 1;
+	transformControls.visible = selectedGoalIndex !== - 1;
+
+	setColor()
+	renderer.render(scene, camera);
+	// stats.update();
 
 }
 
 
 
-animate();
+
+
+function loadModel(promise) {
+
+
+	promise
+		.then(({ goalMap, urdf, ik, helperScale = 6 }) => {
+			ik.updateMatrixWorld(true);
+
+			// create the helper
+			if (params.displayIk) {
+				ikHelper = new IKRootsHelper(ik);
+				ikHelper.setJointScale(helperScale);
+				ikHelper.setResolution(window.innerWidth, window.innerHeight);
+				ikHelper.color.set(0xe91e63).convertSRGBToLinear();
+				ikHelper.setColor(ikHelper.color);
+
+				drawThroughIkHelper = new IKRootsHelper(ik);
+				drawThroughIkHelper.setJointScale(helperScale);
+				drawThroughIkHelper.setResolution(window.innerWidth, window.innerHeight);
+				drawThroughIkHelper.color.set(0xe91e63).convertSRGBToLinear();
+				drawThroughIkHelper.setColor(drawThroughIkHelper.color);
+				drawThroughIkHelper.setDrawThrough(true);
+				scene.add(ikHelper, drawThroughIkHelper);
+			}
+			// console.log(urdf.colliders.body0_coll_big)
+
+			scene.add(urdf);
+
+			const loadedGoals = [];
+			goalMap.forEach((link, goal) => {
+
+				loadedGoals.push(goal);
+				goalToLinkMap.set(goal, link);
+				linkToGoalMap.set(link, goal);
+			});
+
+			solver = new Solver(ik);
+
+
+			if (loadedGoals.length) {
+
+				targetObject.position.set(...loadedGoals[0].position);
+				targetObject.quaternion.set(...loadedGoals[0].quaternion);
+				selectedGoalIndex = 0;
+			} else {
+				selectedGoalIndex = - 1;
+			}
+			loadedGoals.forEach(g => {
+
+				g.originalPosition = [0, 0, 0];
+				g.originalQuaternion = [0, 0, 0, 1];
+			});
+
+			ikRoot = ik;
+			urdfRoot = urdf;
+			// console.log(urdfRoot.visual.body0_plast_white.children)
+			goals.push(...loadedGoals);
 
 
 
-function updateTarget() {
 
-    if (!transformControls.dragging) {
+		});
 
-        targetObject.matrix.set(...followLinkMap.get(goal_ID).matrixWorld).transpose();  //
-        targetObject.matrix.decompose(
-            targetObject.position,
-            targetObject.quaternion,
-            targetObject.scale,
-        );
 
-        goalMesh[goal_ID].setPosition(
-            targetObject.position.x,
-            targetObject.position.y,
-            targetObject.position.z,
-        );
-        //console.log('rem')
-    }
-    goalMesh[goal_ID].setPosition(
-        targetObject.position.x,
-        targetObject.position.y,
-        targetObject.position.z,
-    );
+
 }
+function setColor() {
+	for (let key in urdfRoot.colliders) {
+		//	console.log(key);
+		urdfRoot.colliders[key].children[0].material.color.setHex(0xb8ac23);
+		urdfRoot.colliders[key].children[0].material.opacity = 0.5;
+		urdfRoot.colliders[key].children[0].material.transparent = true;
+		//console.log(urdfRoot.colliders[key]);
+	}
+}
+
 
 function sendRequest(method, url, body = null) {
-    return new Promise((resolve, reject) => {
-        const xhr = new XMLHttpRequest()
-        xhr.open(method, url)
-        xhr.responseType = 'json'
-        xhr.setRequestHeader('Content-Type', 'application/json')
-        xhr.onload = () => {
-            if (xhr.status >= 400) {
-                reject(xhr.response)
-            } else {
-                resolve(xhr.response)
-            }
-        }
-        xhr.onerror = () => {
-            reject(xhr.response)
-        }
-        // 
-        xhr.send(JSON.stringify(body))
-    })
+	return new Promise((resolve, reject) => {
+		const xhr = new XMLHttpRequest()
+		xhr.open(method, url)
+		xhr.responseType = 'json'
+		xhr.setRequestHeader('Content-Type', 'application/json')
+		xhr.onload = () => {
+			if (xhr.status >= 400) {
+				reject(xhr.response)
+			} else {
+				resolve(xhr.response)
+			}
+		}
+		xhr.onerror = () => {
+			reject(xhr.response)
+		}
+		// 
+		xhr.send(JSON.stringify(body))
+	})
 
+}
+
+function scale(number, inMin, inMax, outMin, outMax) {
+	return (number - inMin) * (outMax - outMin) / (inMax - inMin) + outMin;
 }
